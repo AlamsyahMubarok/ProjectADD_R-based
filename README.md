@@ -34,5 +34,4 @@ This project aims to identify priority health interventions in Japan by analyzin
 
 The project resulted in a clear, interpretable classification of disease threats and produced recommendations that can guide **health policy prioritization** in Japan.
 
-## Folder Structure
 
