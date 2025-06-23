@@ -1,0 +1,381 @@
+---
+title: "Final Project ADD"
+author: "Alisha Rafimalia"
+date: "2024-12-08"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# MENGUMPULKAN DATA
+Memuat dataset yang akan digunakan untuk analisis clustering, yaitu file dengan nama "ADD - Japan Health Statistics.csv". sep = ";" digunakan untuk memberitahu bahwa yang dipakai untuk memisahkan tiap data adalah ";" bukan ",".
+```{r}
+fpdat <- read.csv("/Users/sasharfml/Documents/ALISHA/SEMESTER 3/ADD - Japan 2020 Health Statistics.csv", sep = ";")
+fpdat
+```
+Mengimpor package atau library yang dibutuhkan untuk analisis
+```{r}
+# Import Library
+library(cluster) #untuk analisis cluttering    
+library(factoextra) #visualisasi dari hasil clustering 
+library(dbscan) #menyediakan implementasi dari algortima dbscan
+library(ggplot2) #visualisasi box plot
+```
+
+
+# PERSIAPAN DATA
+1. Membuat dan Melihat Dimensi Dataframe
+```{r}
+# Melihat dimensi data
+dim(fpdat)
+```
+```{r}
+# Menampilkan beberapa baris awal
+head(fpdat)
+```
+```{r}
+# Menampilkan beberapa baris terakhir
+tail(fpdat)
+```
+2. Melihat tipe data dari setiap kolom
+```{r}
+str(fpdat)
+```
+
+3. Melihat rangkuman nilai statistik dari setiap kolom
+```{r}
+summary(fpdat)
+```
+
+4. Pengecekan Nilai Null (Missing Values)
+```{r}
+# Mengecek jumlah nilai NULL/NA di setiap kolom
+colSums(is.na(fpdat))
+
+# Mengecek total nilai NA di dataset
+sum(is.na(fpdat))
+
+# Menampilkan baris dengan nilai NA
+fpdat[!complete.cases(fpdat), ]
+```
+# IDENTIFIKASI OUTLIERS
+Dalam statistik dan analisis data, outlier adalah nilai yang secara signifikan berbeda dari sebagian besar data lainnya. Berikut adalah beberapa metode yang umum digunakan untuk mendeteksi outlier dalam analisis data.
+1. Metode Box Plot
+```{r}
+library(ggplot2)
+
+# Membuat boxplot untuk setiap kolom menggunakan ggplot2
+boxplot_data <- reshape2::melt(fpdat)
+boxplot_data <- na.omit(boxplot_data)
+boxplot_data$value <- as.numeric(as.character(boxplot_data$value))
+
+
+ggplot(boxplot_data, aes(x = variable, y = value)) + 
+  geom_boxplot() +
+  labs(x = "Variable", y = "Value") +
+  facet_wrap(~variable, scales = "free") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+2. Metode Interquartile Range (IQR)
+```{r}
+# Ubah tipe data kolom ke numerik dan ganti koma dengan titik desimal
+fpdat$Mortality.Rate.... <- as.numeric(gsub(",", ".", as.character(fpdat$Mortality.Rate....)))
+
+# Menghitung kuartil
+Q1 <- quantile(fpdat$Mortality.Rate...., 0.25, na.rm = TRUE)
+Q3 <- quantile(fpdat$Mortality.Rate...., 0.75, na.rm = TRUE)
+IQR <- Q3 - Q1  # Menghitung IQR
+
+
+fpdat$Mortality.Rate.... <- as.numeric(as.character(fpdat$Mortality.Rate..))
+
+# Menentukan batas bawah dan atas
+lower_bound <- Q1 - 1.5 * IQR
+upper_bound <- Q3 + 1.5 * IQR
+
+# Menemukan outliers
+IQRoutliers <- fpdat[fpdat$Mortality.Rate.. < lower_bound | fpdat$Mortality.Rate.... > upper_bound, ]
+
+# Menampilkan outliers
+print(IQRoutliers)
+```
+
+3. Metode Z-Score
+```{r}
+# Menghitung Z-score
+fpdat$z_score <- scale(fpdat$Mortality.Rate..)
+
+# Menemukan outliers
+Zoutliers <- fpdat[abs(fpdat$z_score) > 3 | abs(fpdat$z_score) < -3, ]
+
+# Menampilkan outliers
+print(Zoutliers)
+```
+Dari ketiga metode yang telah digunakan, tidak ada satupun outliers yang terdeteksi. hal tersebut mengindikasikan bahwa semua nilai berada dalam rentang yang wajar dan konsisten dengan distribusi data, tanpa adanya nilai ekstrem yang menyimpang secara signifikan.
+
+
+# K-MEANS CLUSTERING
+0. Principal Component Analysis (PCA)
+```{r}
+# Melakukan PCA
+pcaresult <- prcomp(clustering, center = TRUE, scale. = TRUE)
+pcaresult
+```
+```{r}
+# Melihat rangkuman hasil PCA
+summary(pcaresult)
+```
+Analisis PCA menyederhanakan data menjadi tiga komponen utama yang menjelaskan seluruh variasi dalam data. Komponen pertama menjelaskan 34,75% variasi, diikuti oleh komponen kedua dengan 33,34%, dan komponen ketiga dengan 31,91%. Dengan ini, hubungan antara angka kematian, prevalensi, dan beban penyakit dapat dianalisis lebih efektif tanpa kehilangan informasi penting.
+
+1. Persiapkan data untuk clustering. Dalam hal ini, pilih kolom-kolom yang akan dianalisis
+```{r}
+# Pilih kolom yang relevan untuk clustering
+clustering <- fpdat[, c("Mortality.Rate....", "Prevalence.Rate....", "DALYs")]
+
+# Pastikan data tidak mengandung NA
+clustering <- na.omit(clustering)
+
+#Tampilkan datanya
+clustering
+```
+
+2. Normalisasi data
+```{r}
+# Ubah tipe data kolom ke numerik dan ganti koma dengan titik desimal
+clustering$Mortality.Rate.... <- as.numeric(gsub(",", ".", as.character(clustering$Mortality.Rate....)))
+clustering$Prevalence.Rate.... <- as.numeric(gsub(",", ".", as.character(clustering$Prevalence.Rate....)))
+clustering$DALYs <- as.numeric(clustering$DALYs)
+
+# Normalisasi data
+scaledcluster <- scale(clustering)
+scaledcluster
+```
+
+3. Tentukan jumlah clustering
+```{r}
+#Elbow Method (within-cluster sum of squares (WSS))
+fviz_nbclust(scaledcluster, kmeans, method = "wss")
+
+#Silhouette Method
+fviz_nbclust(scaledcluster, kmeans, method="silhouette")
+```
+Dari hasil Elbow Method, titik yang menjadi peralihan pergerakan grafik curam menjadi melandai ada di angka 7. di hasil Silhouette Method, jumlah cluster di mana nilai rata-rata silhouette tertinggi tercapai ada di angka 7 pula. Maka dari itu, jumlah clustering yang akan dipakai adalah 7
+```{r}
+# Melihat silhouette score
+kmeans_result <- kmeans(scaledcluster, centers = 7) # ganti 'optimal_k' dengan jumlah cluster optimal
+sil <- silhouette(kmeans_result$cluster, dist(scaledcluster))
+summary(sil)
+```
+Rata-rata Silhouette Score:
+  0.5-1: Kluster sangat baik.
+  0.25-0.5: Kluster cukup baik.
+  <0.25: Kluster buruk.
+Dari hasil tersebut, didapatkan bahwa rata-rata silhouette scorenya adalah 0.35490, yang menandakan bahwa klusterisasi sudah cukup baik
+
+4. Implementasi K-Means Clustering
+```{r}
+kmodel <- kmeans(scaledcluster, centers = 7, nstart = 25) 
+kmodel
+```
+Didapatkan keterangan pengelompokkan dari tiap clusternya sebagai berikut:
+1. Cluster 1: Prevalensi penyakit tinggi dengan dampak jangka panjang yang signifikan meskipun tingkat kematian rendah.
+2. Cluster 2: Tingkat kematian tinggi dengan prevalensi penyakit tinggi, namun dampak jangka panjang terhadap kualitas hidup rendah.
+3. CLuster 3: Prevalensi penyakit tinggi dengan tingkat kematian dan dampak jangka panjang yang rendah.
+4. Cluster 4: Tingkat kematian dan prevalensi rendah, namun dampak jangka panjang terhadap kualitas hidup cukup besar.
+5. Cluster 5: Penyakit dengan beban rendah baik dalam hal prevalensi maupun dampak jangka panjang.
+6. Cluster 6: Meskipun prevalensi rendah, tingkat kematian tinggi dengan dampak jangka panjang yang signifikan.
+7. Cluster 7: Tingkat kematian tinggi, namun dampak jangka panjang terhadap kualitas hidup relatif rendah meskipun prevalensi rendah.
+
+Selain itu, BSS/Total SS (76.8%) menunjukkan bahwa 76.8% variabilitas total dalam data dapat dijelaskan oleh perbedaan antara cluster. Angka ini cukup tinggi, yang berarti clustering ini berhasil memisahkan data dengan baik dan banyak variabilitas yang bisa dijelaskan oleh pembentukan cluster.
+
+5. Visualisasi Hasil Clustering
+```{r}
+fviz_cluster(kmodel, data=clustering) 
+
+```
+6. Menghubungkan hasil kluster dengan nama penyakit
+```{r}
+# Membuat dataset yang memiliki kolom tambahan yaitu diseases
+datahasil <- fpdat[, c("Disease.Name", "Mortality.Rate....", "Prevalence.Rate....", "DALYs")]
+datahasil$cluster <- kmodel$cluster
+datahasil
+```
+7. Mengelompokkan penyakit berdasarkan cluster
+```{r}
+hasilcluster <- datahasil %>%
+  group_by(Disease.Name) %>%
+  summarise(cluster = first(cluster))
+hasilcluster
+```
+
+
+# DBSCAN CLUSTERING
+1. Mencari kombinasi nilai eps dan minPts yang sesuai
+```{r}
+# Eksperimen DBSCAN dengan berbagai kombinasi eps dan minPts
+epsval <- c(0.1, 0.2, 0.25, 0.3, 0.4, 0.5)  # coba nilai eps yang berbeda
+minPtsval <- c(1, 2, 3, 4, 5, 6)     # coba nilai minPts yang berbeda
+
+for (eps in epsval) {
+  for (minPts in minPtsval) {
+    dbcoba <- dbscan(scaledcluster, eps = eps, minPts = minPts)
+    cat("eps:", eps, "minPts:", minPts, 
+        "Clusters:", max(dbcoba$cluster), 
+        "Noise points:", sum(dbcoba$cluster == 0), "\n")
+  }
+}
+```
+
+2. Melakukan algoritma DBscan
+```{r}
+#Melakukan algoritma DBscan dengan nilai eps dan minPts yang dirasa sesuai berdasarkan eksperimen sebelumnya
+dbresult <- dbscan(scaledcluster, eps = 0.4, minPts = 1)
+
+# Menampilkan hasil dbscan
+print(dbresult)
+```
+3. Menampilkan visualisasi dari clustering DBscan
+```{r}
+fviz_cluster(dbresult, data = scaledcluster, geom = "point")
+```
+
+# REGRESI
+1. Mengubah nama kolom untuk mempermudah pemanggilan
+```{r}
+#Menghilangkan titik - titik setelah nama data
+names(fpdat) <- gsub("\\.+", ".", names(fpdat))
+```
+
+```{r}
+# Ganti nama kolom yang relevan menjadi lebih mudah dibaca
+names(fpdat) <- c("Country", "Year", "DiseaseName", "DiseaseCategory", "PrevalenceRate", "IncidenceRate", "MortalityRate", 
+                 "AgeGroup", "Gender", "PopulationAffected", "HealthcareAccess", "DoctorsPer1000", "HospitalBedsPer1000", 
+                 "TreatmentType", "AvgTreatmentCost", "VaccinesAvailability", "RecoveryRate", "DALYs", "Improvement5Years", "PerCapitaIncome", "EducationIndex", "UrbanizationRate")
+```
+
+2. Mengubah tipe data menjadi numerik
+```{r}
+# Pastikan tipe data kolom PrevalenceRate dan MortalityRate numerik
+fpdat$PrevalenceRate <- as.numeric(fpdat$PrevalenceRate)
+fpdat$MortalityRate <- as.numeric(fpdat$MortalityRate)
+fpdat$UrbanizationRate<- as.numeric(as.character(fpdat$UrbanizationRate))
+fpdat$DoctorsPer1000<- as.numeric(as.character(fpdat$DoctorsPer1000))
+fpdat$HospitalBedsPer1000<- as.numeric(as.character(fpdat$HospitalBedsPer1000))
+fpdat$PerCapitaIncome<- as.numeric(as.character(fpdat$PerCapitaIncome))
+
+# Cek nilai yang hilang (NA)
+sum(is.na(data$PrevalenceRate))  # Mengecek jumlah NA dalam kolom PrevalenceRate
+sum(is.na(data$MortalityRate))   # Mengecek jumlah NA dalam kolom MortalityRate
+```
+
+3. Membuat Scatter Plot
+```{r}
+# Membuat scatter plot dengan ggplot2
+library(ggplot2)
+ggplot(fpdat, aes(x = PrevalenceRate, y = MortalityRate)) +
+  geom_point(color = "blue") +
+  labs(title = "Scatter Plot Prevalence Rate vs Mortality Rate",
+       x = "Prevalence Rate (%)",
+       y = "Mortality Rate (%)") +
+  theme_minimal()
+
+```
+
+4. Menambahkan regresi linear pada Scatter Plot
+```{r}
+# Menambahkan garis regresi linear
+ggplot(fpdat, aes(x = PrevalenceRate, y = MortalityRate)) +
+  geom_point(color = "blue") +
+  geom_smooth(method = "lm", color = "red") +  
+  # Menambahkan garis regresi linear
+  labs(title = "Scatter Plot Prevalence Rate vs Mortality Rate dengan Garis Regresi",
+       x = "Prevalence Rate (%)",
+       y = "Mortality Rate (%)") +
+  theme_minimal()
+```
+
+5. Hitung Koefisien Korelasi
+```{r}
+# Hitung korelasi antara PrevalenceRate dan MortalityRate
+correlation <- cor(fpdat$PrevalenceRate, fpdat$MortalityRate, method = "pearson", use = "complete.obs")
+
+
+# Cetak hasil korelasi
+print(paste("Koefisien Korelasi antara PrevalenceRate dan MortalityRate:", correlation))
+```
+
+6. Uji Signifikansi Korelasi
+```{r}
+# Uji signifikansi korelasi
+cor.test(fpdat$PrevalenceRate, fpdat$MortalityRate, method = "pearson")
+```
+7. Cek Outliers Menggunakan Box Plot
+```{r}
+#Cek Outliers Menggunakan Boxplot
+boxplot(fpdat$PrevalenceRate, main = "Boxplot Prevalence Rate")
+boxplot(fpdat$MortalityRate, main = "Boxplot Mortality Rate")
+```
+
+8. Visualisasi Heatmap Untuk Melihat Hubungan Antarvariabel
+```{r}
+library(ggcorrplot)
+correlation_matrix <- cor(fpdat[, c("PrevalenceRate", "HealthcareAccess", 
+                                   "PerCapitaIncome", "UrbanizationRate", 
+                                   "DoctorsPer1000", "HospitalBedsPer1000", 
+                                   "MortalityRate")])
+ggcorrplot(correlation_matrix, lab = TRUE)
+```
+
+9. Gunakan Pairplot Untuk Melihat Hubungan Antarvariabel
+```{r}
+pairs(fpdat[, c("PrevalenceRate", "HealthcareAccess", "PerCapitaIncome", 
+               "UrbanizationRate", "DoctorsPer1000", "HospitalBedsPer1000", 
+               "MortalityRate")])
+
+```
+
+10. Pembuatan Model Regresi
+```{r}
+#Pemodelan Regresi
+model <- lm(MortalityRate ~ PrevalenceRate + HealthcareAccess + 
+             PerCapitaIncome + UrbanizationRate + DoctorsPer1000 + 
+             HospitalBedsPer1000, data = data)
+summary(model)
+```
+
+11. Pemeriksaan Multikolinearitas
+```{r}
+#Pemeriksaan Multikolinearitas
+data <- fpdat
+library(car)
+vif(model)
+```
+
+12.Perbandingan Penuh Dengan AIC dan BIC
+```{r}
+model_reduced <- lm(MortalityRate ~ HealthcareAccess + PerCapitaIncome + UrbanizationRate, data = data)
+AIC(model, model_reduced)
+BIC(model, model_reduced)
+```
+
+13. Model AKhir
+```{r}
+plot(model, which = 1)  # Residuals vs Fitted
+plot(model, which = 2)  # Normal Q-Q plot
+
+```
+
+```{r}
+library(ggplot2)
+ggplot(data, aes(x = PrevalenceRate, y = MortalityRate)) +
+  geom_point() +
+  geom_smooth(method = "lm", formula = y ~ x, se = TRUE) +
+  labs(title = "Relationship between Prevalence Rate and Mortality Rate",
+       x = "Prevalence Rate",
+       y = "Mortality Rate")
+
+```
